@@ -54,7 +54,7 @@ hdiutil create -volname "Chops" \
   -srcfolder build/export/Chops.app \
   -ov -format UDZO \
   build/Chops.dmg
-xcrun stapler staple build/Chops.dmg
+xcrun stapler staple build/Chops.dmg || echo "⚠️  DMG staple failed (normal — CDN propagation delay). App inside is stapled."
 
 echo "🏷️  Tagging v$VERSION..."
 git tag "v$VERSION"
