@@ -63,6 +63,7 @@ struct ContentView: View {
     }
 
     private func startScanning() {
+        AppLogger.ui.notice("App started, beginning initial scan")
         let scanner = SkillScanner(modelContext: modelContext)
         self.scanner = scanner
         scanner.removeDeletedSkills()
@@ -79,6 +80,7 @@ struct ContentView: View {
         }
         watcher.watchDirectories(allPaths)
         self.fileWatcher = watcher
+        AppLogger.ui.notice("File watchers active on \(allPaths.count) directories")
 
         // Sync remote servers in the background
         Task {
