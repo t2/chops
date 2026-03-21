@@ -18,12 +18,24 @@ struct SkillMetadataBar: View {
 
             Divider().frame(height: 16)
 
-            Text(abbreviatedPath)
+            if skill.isRemote, let server = skill.remoteServer {
+                Label {
+                    Text(server.label)
+                } icon: {
+                    Image(systemName: "server.rack")
+                }
+                .font(.caption)
+                .foregroundStyle(.indigo)
+
+                Divider().frame(height: 16)
+            }
+
+            Text(skill.isRemote ? (skill.remotePath ?? "") : abbreviatedPath)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .help(installedPathsSummary)
+                .help(skill.isRemote ? (skill.remotePath ?? "") : installedPathsSummary)
 
             Divider().frame(height: 16)
 

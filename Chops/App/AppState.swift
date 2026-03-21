@@ -15,4 +15,5 @@ enum SidebarFilter: Hashable {
     case favorites
     case tool(ToolSource)
     case collection(String)
+    case server(String)
 }

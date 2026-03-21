@@ -43,6 +43,7 @@ extension ToolSource {
         case .copilot: "CP"
         case .aider: "AI"
         case .amp: "AM"
+        case .openclaw: "OC"
         case .custom: "?"
         }
     }

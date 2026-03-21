@@ -22,12 +22,17 @@ struct SettingsView: View {
                     Label("Scan Directories", systemImage: "folder.badge.gearshape")
                 }
 
+            RemoteServersSettingsView()
+                .tabItem {
+                    Label("Servers", systemImage: "server.rack")
+                }
+
             aboutView
                 .tabItem {
                     Label("About", systemImage: "info.circle")
                 }
         }
-        .frame(width: 480, height: 320)
+        .frame(width: 480, height: 380)
         .onAppear {
             loadCustomPaths()
         }

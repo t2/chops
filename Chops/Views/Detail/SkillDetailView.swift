@@ -51,13 +51,15 @@ struct SkillDetailView: View {
                         .foregroundStyle(skill.isFavorite ? .yellow : .secondary)
                 }
             }
-            ToolbarItem {
-                Button {
-                    NSWorkspace.shared.selectFile(skill.filePath, inFileViewerRootedAtPath: "")
-                } label: {
-                    Image(systemName: "folder")
+            if !skill.isRemote {
+                ToolbarItem {
+                    Button {
+                        NSWorkspace.shared.selectFile(skill.filePath, inFileViewerRootedAtPath: "")
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .help("Show in Finder")
                 }
-                .help("Show in Finder")
             }
         }
     }

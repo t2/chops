@@ -65,6 +65,7 @@ struct ContentView: View {
     private func startScanning() {
         let scanner = SkillScanner(modelContext: modelContext)
         self.scanner = scanner
+        scanner.removeDeletedSkills()
         scanner.scanAll()
 
         var allPaths: [String] = []
@@ -78,5 +79,10 @@ struct ContentView: View {
         }
         watcher.watchDirectories(allPaths)
         self.fileWatcher = watcher
+
+        // Sync remote servers in the background
+        Task {
+            await scanner.syncAllRemoteServers()
+        }
     }
 }

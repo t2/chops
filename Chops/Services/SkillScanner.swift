@@ -188,12 +188,99 @@ final class SkillScanner {
         try? modelContext.save()
     }
 
+    // MARK: - Remote Server Scanning
+
+    func syncAllRemoteServers() async {
+        let descriptor = FetchDescriptor<RemoteServer>()
+        guard let servers = try? modelContext.fetch(descriptor) else { return }
+        for server in servers {
+            await scanRemoteServer(server)
+        }
+    }
+
+    /// Scans a remote server for skills. Sets lastSyncError on failure.
+    func scanRemoteServer(_ server: RemoteServer) async {
+        do {
+            let remoteSkills = try await SSHService.findSkills(server)
+            var foundPaths = Set<String>()
+
+            for (path, content) in remoteSkills {
+                let resolvedPath = "remote://\(server.id)/\(path)"
+                foundPaths.insert(resolvedPath)
+
+                let parsed = FrontmatterParser.parse(content)
+                let name: String
+                if !parsed.name.isEmpty {
+                    name = parsed.name
+                } else {
+                    // Derive name from parent directory
+                    let components = path.components(separatedBy: "/")
+                    let skillDirIndex = components.lastIndex(of: "SKILL.md").map { components.index(before: $0) }
+                    name = skillDirIndex.map { components[$0] } ?? "Unknown"
+                }
+
+                let predicate = #Predicate<Skill> { $0.resolvedPath == resolvedPath }
+                let fetchDescriptor = FetchDescriptor<Skill>(predicate: predicate)
+
+                if let existing = try? modelContext.fetch(fetchDescriptor).first {
+                    existing.content = parsed.content
+                    existing.name = name
+                    existing.skillDescription = parsed.description
+                    existing.frontmatter = parsed.frontmatter
+                } else {
+                    let skill = Skill(
+                        filePath: resolvedPath,
+                        toolSource: .openclaw,
+                        isDirectory: true,
+                        name: name,
+                        skillDescription: parsed.description,
+                        content: parsed.content,
+                        frontmatter: parsed.frontmatter,
+                        isGlobal: true,
+                        resolvedPath: resolvedPath
+                    )
+                    skill.remoteServer = server
+                    skill.remotePath = path
+                    modelContext.insert(skill)
+                }
+            }
+
+            // Remove skills that no longer exist on the server
+            let serverID = server.id
+            let remotePredicate = #Predicate<Skill> { $0.resolvedPath.starts(with: "remote://") }
+            if let existingRemoteSkills = try? modelContext.fetch(FetchDescriptor<Skill>(predicate: remotePredicate)) {
+                for skill in existingRemoteSkills {
+                    guard skill.remoteServer?.id == serverID else { continue }
+                    if !foundPaths.contains(skill.resolvedPath) {
+                        modelContext.delete(skill)
+                    }
+                }
+            }
+
+            server.lastSyncDate = .now
+            server.lastSyncError = nil
+            try? modelContext.save()
+        } catch {
+            server.lastSyncError = error.localizedDescription
+            try? modelContext.save()
+        }
+    }
+
     func removeDeletedSkills() {
         let descriptor = FetchDescriptor<Skill>()
         guard let skills = try? modelContext.fetch(descriptor) else { return }
         let fm = FileManager.default
 
         for skill in skills {
+            // Remove orphaned remote skills (server was deleted)
+            if skill.resolvedPath.hasPrefix("remote://") && skill.remoteServer == nil {
+                modelContext.delete(skill)
+                continue
+            }
+
+            // Remote skills are managed by scanRemoteServer(), skip here
+            if skill.isRemote { continue }
+
             // Remove paths that no longer exist
             let validPaths = skill.installedPaths.filter { fm.fileExists(atPath: $0) }
             if validPaths.isEmpty {

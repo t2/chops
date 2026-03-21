@@ -18,6 +18,11 @@ final class Skill {
     var fileSize: Int
     var isGlobal: Bool
 
+    var remoteServer: RemoteServer?
+    var remotePath: String?
+
+    var isRemote: Bool { remoteServer != nil }
+
     /// Comma-separated tool raw values (e.g. "claude,cursor,codex")
     var toolSourcesRaw: String
 

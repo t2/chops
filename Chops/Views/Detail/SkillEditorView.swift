@@ -10,6 +10,8 @@ final class SkillEditorDocument {
         }
     }
     var hasUnsavedChanges = false
+    var isLoadingRemote = false
+    var isSavingRemote = false
     var showingSaveError = false
     var saveErrorMessage = ""
 
@@ -17,6 +19,24 @@ final class SkillEditorDocument {
     private var isLoading = false
 
     func load(from skill: Skill) {
+        if skill.isRemote {
+            loadRemote(skill)
+        } else {
+            loadLocal(skill)
+        }
+    }
+
+    func save(to skill: Skill) {
+        if skill.isRemote {
+            saveRemote(skill)
+        } else {
+            saveLocal(skill)
+        }
+    }
+
+    // MARK: - Local
+
+    private func loadLocal(_ skill: Skill) {
         isLoading = true
 
         if let data = try? String(contentsOfFile: skill.filePath, encoding: .utf8) {
@@ -33,7 +53,7 @@ final class SkillEditorDocument {
         saveErrorMessage = ""
     }
 
-    func save(to skill: Skill) {
+    private func saveLocal(_ skill: Skill) {
         do {
             try editorContent.write(toFile: skill.filePath, atomically: true, encoding: .utf8)
             fullFileContent = editorContent
@@ -55,6 +75,82 @@ final class SkillEditorDocument {
             showingSaveError = true
         }
     }
+
+    // MARK: - Remote
+
+    private func loadRemote(_ skill: Skill) {
+        guard let server = skill.remoteServer, let remotePath = skill.remotePath else {
+            editorContent = skill.content
+            fullFileContent = skill.content
+            return
+        }
+
+        isLoading = true
+        isLoadingRemote = true
+
+        Task {
+            do {
+                let content = try await SSHService.readFile(server, path: remotePath)
+                await MainActor.run {
+                    editorContent = content
+                    fullFileContent = content
+                    isLoading = false
+                    isLoadingRemote = false
+                    hasUnsavedChanges = false
+                    showingSaveError = false
+                    saveErrorMessage = ""
+                }
+            } catch {
+                await MainActor.run {
+                    // Fall back to cached content
+                    editorContent = skill.content
+                    fullFileContent = skill.content
+                    isLoading = false
+                    isLoadingRemote = false
+                    hasUnsavedChanges = false
+                    saveErrorMessage = "Failed to load from server: \(error.localizedDescription)"
+                    showingSaveError = true
+                }
+            }
+        }
+    }
+
+    private func saveRemote(_ skill: Skill) {
+        guard let server = skill.remoteServer, let remotePath = skill.remotePath else {
+            saveErrorMessage = "Missing remote server or path"
+            showingSaveError = true
+            return
+        }
+
+        isSavingRemote = true
+
+        Task {
+            do {
+                try await SSHService.writeFile(server, path: remotePath, content: editorContent)
+                await MainActor.run {
+                    fullFileContent = editorContent
+                    hasUnsavedChanges = false
+                    isSavingRemote = false
+
+                    let parsed = FrontmatterParser.parse(editorContent)
+                    if !parsed.name.isEmpty {
+                        skill.name = parsed.name
+                    }
+                    skill.skillDescription = parsed.description
+                    skill.content = parsed.content
+                    skill.frontmatter = parsed.frontmatter
+                    skill.fileModifiedDate = .now
+                    skill.fileSize = editorContent.utf8.count
+                }
+            } catch {
+                await MainActor.run {
+                    saveErrorMessage = error.localizedDescription
+                    showingSaveError = true
+                    isSavingRemote = false
+                }
+            }
+        }
+    }
 }
 
 struct SkillEditorView: View {
@@ -62,17 +158,35 @@ struct SkillEditorView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            HighlightedTextEditor(text: $document.editorContent)
-
-            if document.hasUnsavedChanges {
-                Text("Modified")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.orange.opacity(0.2), in: Capsule())
-                    .foregroundStyle(.orange)
-                    .padding(12)
+            if document.isLoadingRemote {
+                VStack {
+                    ProgressView("Loading from server...")
+                        .padding()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HighlightedTextEditor(text: $document.editorContent)
             }
+
+            HStack(spacing: 6) {
+                if document.isSavingRemote {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Saving...")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if document.hasUnsavedChanges {
+                    Text("Modified")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.orange.opacity(0.2), in: Capsule())
+                        .foregroundStyle(.orange)
+                }
+            }
+            .padding(12)
         }
     }
 }

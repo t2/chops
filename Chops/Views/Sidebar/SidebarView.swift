@@ -3,8 +3,13 @@ import SwiftData
 
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \Skill.name) private var allSkills: [Skill]
     @Query(sort: \SkillCollection.sortOrder) private var collections: [SkillCollection]
+    @Query(sort: \RemoteServer.label) private var servers: [RemoteServer]
+    @State private var syncingServerIDs: Set<String> = []
+    @State private var serverErrors: [String: String] = [:]
+    @State private var showingErrorForServer: String?
 
     private var activeSources: [ToolSource] {
         ToolSource.allCases.filter { tool in
@@ -42,11 +47,86 @@ struct SidebarView: View {
                 }
             }
 
+            if !servers.isEmpty {
+                Section("Servers") {
+                    ForEach(servers) { server in
+                        HStack {
+                            Label {
+                                Text(server.label)
+                            } icon: {
+                                if server.isOpenClaw {
+                                    Image("tool-openclaw")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Image(systemName: "server.rack")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            if let error = serverErrors[server.id] {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .popover(isPresented: Binding(
+                                        get: { showingErrorForServer == server.id },
+                                        set: { if !$0 { showingErrorForServer = nil } }
+                                    )) {
+                                        Text(error)
+                                            .font(.caption)
+                                            .padding()
+                                            .frame(maxWidth: 250)
+                                    }
+                                    .onTapGesture {
+                                        showingErrorForServer = server.id
+                                    }
+                            }
+
+                            Button {
+                                syncServer(server)
+                            } label: {
+                                if syncingServerIDs.contains(server.id) {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Image(systemName: "arrow.triangle.2.circlepath")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .help("Sync skills from server")
+                            .disabled(syncingServerIDs.contains(server.id))
+                        }
+                        .badge(server.skills.count)
+                        .tag(SidebarFilter.server(server.id))
+                    }
+                }
+            }
+
             Section("Collections") {
                 CollectionListView()
             }
         }
         .listStyle(.sidebar)
         .navigationTitle("Chops")
+    }
+
+    private func syncServer(_ server: RemoteServer) {
+        syncingServerIDs.insert(server.id)
+        serverErrors.removeValue(forKey: server.id)
+        Task {
+            let scanner = SkillScanner(modelContext: modelContext)
+            await scanner.scanRemoteServer(server)
+            await MainActor.run {
+                syncingServerIDs.remove(server.id)
+                if let error = server.lastSyncError {
+                    serverErrors[server.id] = error
+                }
+            }
+        }
     }
 }
