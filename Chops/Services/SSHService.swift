@@ -62,19 +62,22 @@ enum SSHService {
         }
     }
 
-    /// Expands a leading `~` to `$HOME` so the remote shell resolves it.
-    private static func expandTilde(_ path: String) -> String {
-        if path.hasPrefix("~/") {
-            return "$HOME/" + path.dropFirst(2)
+    /// Escapes a path for the remote shell, handling tilde expansion.
+    /// Uses double quotes so `$HOME` expands while spaces are preserved.
+    private static func shellQuotePath(_ path: String) -> String {
+        var expanded = path
+        if expanded.hasPrefix("~/") {
+            expanded = "$HOME/" + expanded.dropFirst(2)
+        } else if expanded == "~" {
+            expanded = "$HOME"
         }
-        if path == "~" {
-            return "$HOME"
-        }
-        return path
+        // Double-quote: preserves $HOME expansion, protects spaces and globs
+        let escaped = expanded.replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
     }
 
     static func findSkills(_ server: RemoteServer) async throws -> [(path: String, content: String)] {
-        let basePath = expandTilde(server.skillsBasePath)
+        let basePath = shellQuotePath(server.skillsBasePath)
 
         // Find all SKILL.md files under the base path
         let findCmd = "find \(basePath) -name 'SKILL.md' -type f 2>/dev/null"

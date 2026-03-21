@@ -107,13 +107,20 @@ final class SkillEditorDocument {
             return
         }
 
+        loadTask?.cancel()
+        loadGeneration += 1
+        let generation = loadGeneration
+        let fallbackContent = skill.content
+
         isLoading = true
         isLoadingRemote = true
 
-        Task {
+        loadTask = Task {
             do {
                 let content = try await SSHService.readFile(server, path: remotePath)
+                guard !Task.isCancelled, loadGeneration == generation else { return }
                 await MainActor.run {
+                    guard self.loadGeneration == generation else { return }
                     editorContent = content
                     fullFileContent = content
                     isLoading = false
@@ -123,10 +130,11 @@ final class SkillEditorDocument {
                     saveErrorMessage = ""
                 }
             } catch {
+                guard !Task.isCancelled, loadGeneration == generation else { return }
                 await MainActor.run {
-                    // Fall back to cached content
-                    editorContent = skill.content
-                    fullFileContent = skill.content
+                    guard self.loadGeneration == generation else { return }
+                    editorContent = fallbackContent
+                    fullFileContent = fallbackContent
                     isLoading = false
                     isLoadingRemote = false
                     hasUnsavedChanges = false

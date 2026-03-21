@@ -16,7 +16,7 @@ struct ChopsApp: App {
     }
 
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema(versionedSchema: SchemaV1.self)
+        let schema = Schema(versionedSchema: SchemaV2.self)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {

@@ -293,14 +293,34 @@ private struct EditServerSheet: View {
                 Spacer()
 
                 Button("Save") {
+                    let connectionChanged = server.host != host
+                        || server.username != username
+                        || server.skillsBasePath != basePath
+                        || server.port != (Int(port) ?? 22)
+
                     server.label = label
                     server.host = host
                     server.port = Int(port) ?? 22
                     server.username = username
                     server.skillsBasePath = basePath
                     server.sshKeyPath = sshKeyPath.isEmpty ? nil : sshKeyPath
+
+                    if connectionChanged {
+                        // Purge stale skills — they may point to files on the old target
+                        for skill in server.skills {
+                            modelContext.delete(skill)
+                        }
+                    }
+
                     try? modelContext.save()
                     dismiss()
+
+                    if connectionChanged {
+                        Task {
+                            let scanner = SkillScanner(modelContext: modelContext)
+                            await scanner.scanRemoteServer(server)
+                        }
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(label.isEmpty || host.isEmpty || username.isEmpty || basePath.isEmpty)
